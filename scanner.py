@@ -39,21 +39,44 @@ COMMON_PORTS = {
 
 
 # ─────────────────────────────────────────────
-# Step 1: Ping host to check if it's alive
+# Step 1: Check if host is alive
 # ─────────────────────────────────────────────
 def is_host_alive(ip: str) -> bool:
     """
-    Sends one ICMP ping to check if the host is alive.
-    Automatically uses the correct ping flags for Windows or Linux/Mac.
+    Checks if a host is alive by trying to connect to common ports.
+    This method works on Windows even when ICMP ping is blocked by firewall.
+    Tries ports 80, 443, 445, 22, 3389 - if any one responds, host is alive.
     """
+    # Quick check ports - if ANY of these respond, the host is alive
+    quick_ports = [80, 443, 445, 22, 3389, 8080, 21, 23, 53]
+    for port in quick_ports:
+        try:
+            with socket.create_connection((ip, port), timeout=0.5):
+                return True
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            # ConnectionRefusedError means host IS alive but port is closed
+            # We need to catch this differently
+            pass
+
+    # Second method: if connection is refused (not timed out), host is alive
+    for port in quick_ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex((ip, port))
+            sock.close()
+            # result == 0 means open, result == 111 or 10061 means refused (but alive!)
+            if result == 0 or result in (111, 10061):
+                return True
+        except Exception:
+            pass
+
+    # Third method: try ping as fallback
     try:
-        # Windows uses -n for count and -w for timeout (in milliseconds)
-        # Linux/Mac uses -c for count and -W for timeout (in seconds)
         if sys.platform == "win32":
             cmd = ["ping", "-n", "1", "-w", "1000", str(ip)]
         else:
             cmd = ["ping", "-c", "1", "-W", "1", str(ip)]
-
         result = subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
