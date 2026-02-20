@@ -1,10 +1,7 @@
 # No external packages required!
 # The scanner uses only Python standard library:
-# - socket (port scanning)
-# - subprocess (ping)
-# - ipaddress (CIDR parsing)
+# - socket      (port scanning)
+# - subprocess  (ping)
+# - ipaddress   (CIDR parsing)
 # - concurrent.futures (parallel execution)
 # - json, argparse, pathlib, datetime
-
-# If you want colorful terminal output (optional):
-# colorama==0.4.6
