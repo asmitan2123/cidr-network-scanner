@@ -44,11 +44,18 @@ COMMON_PORTS = {
 def is_host_alive(ip: str) -> bool:
     """
     Sends one ICMP ping to check if the host is alive.
-    Works on Linux/Mac. Falls back to socket on failure.
+    Automatically uses the correct ping flags for Windows or Linux/Mac.
     """
     try:
+        # Windows uses -n for count and -w for timeout (in milliseconds)
+        # Linux/Mac uses -c for count and -W for timeout (in seconds)
+        if sys.platform == "win32":
+            cmd = ["ping", "-n", "1", "-w", "1000", str(ip)]
+        else:
+            cmd = ["ping", "-c", "1", "-W", "1", str(ip)]
+
         result = subprocess.run(
-            ["ping", "-c", "1", "-W", "1", str(ip)],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=3,
@@ -177,7 +184,7 @@ def save_markdown(data: dict, output_path: str):
     results = data["results"]
 
     lines = [
-        "# 🔍 Network Scan Report",
+        "# Network Scan Report",
         "",
         "## Scan Summary",
         "",
@@ -191,7 +198,7 @@ def save_markdown(data: dict, output_path: str):
         "",
         "---",
         "",
-        "## Live Hosts & Open Ports",
+        "## Live Hosts and Open Ports",
         "",
     ]
 
@@ -199,7 +206,7 @@ def save_markdown(data: dict, output_path: str):
         lines.append("_No live hosts found._")
     else:
         for host in results:
-            lines.append(f"### 🖥️ {host['ip']} — `{host['hostname']}`")
+            lines.append(f"### Host: {host['ip']} -- {host['hostname']}")
             lines.append("")
             lines.append(f"- **Status:** {host['status'].upper()}")
             lines.append(f"- **Open Ports:** {host['total_open']}")
@@ -209,7 +216,7 @@ def save_markdown(data: dict, output_path: str):
                 lines.append("| Port | Service | State |")
                 lines.append("|------|---------|-------|")
                 for p in host["open_ports"]:
-                    lines.append(f"| {p['port']} | {p['service']} | ✅ {p['state']} |")
+                    lines.append(f"| {p['port']} | {p['service']} | OPEN |")
             else:
                 lines.append("_No open ports detected from the common port list._")
 
@@ -217,7 +224,7 @@ def save_markdown(data: dict, output_path: str):
             lines.append("---")
             lines.append("")
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
     print(f"[+] Markdown report saved: {output_path}")
@@ -265,7 +272,7 @@ Examples:
     save_json(scan_data, json_path)
     save_markdown(scan_data, md_path)
 
-    print(f"\n✅ Scan complete! Results saved to '{args.output_dir}/'")
+    print(f"\n[+] Scan complete! Results saved to '{args.output_dir}'")
 
 
 if __name__ == "__main__":
