@@ -1,7 +1,7 @@
 # Use slim Python image
 FROM python:3.11-slim
 
-# Install ping (iputils-ping) and other utilities
+# Install ping utility
 RUN apt-get update && \
     apt-get install -y iputils-ping && \
     apt-get clean && \
@@ -20,6 +20,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Create output folder inside container
 RUN mkdir -p /app/output
 
-# Default command — user passes the CIDR as argument
+# Default command
 ENTRYPOINT ["python", "scanner.py"]
 CMD ["--help"]
