@@ -6,7 +6,7 @@ A Python tool that scans a network subnet (CIDR range), finds live hosts, scans 
 
 ## Features
 
-- Accepts any valid CIDR range (e.g. 192.168.1.0/24)
+- Accepts any valid CIDR range (e.g. 30.10.1.0/24)
 - Ping sweep to detect live hosts (runs in parallel for speed)
 - TCP port scan on 17 common ports
 - Hostname resolution for each live host
@@ -36,7 +36,7 @@ cd cidr-network-scanner
 
 Step 2 - Run a scan:
 ```
-python scanner.py 192.168.1.0/24
+python scanner.py 30.10.1.0/24
 ```
 
 ---
@@ -50,7 +50,7 @@ docker build -t cidr-scanner .
 
 Run a scan:
 ```
-docker run --rm --network host -v $(pwd)/output:/app/output cidr-scanner 192.168.1.0/24
+docker run --rm --network host -v $(pwd)/output:/app/output cidr-scanner 30.10.1.0/24
 ```
 
 ---
@@ -73,7 +73,7 @@ python scanner.py <CIDR> [OPTIONS]
 
 Scan a /24 subnet:
 ```
-python scanner.py 192.168.1.0/24
+python scanner.py 30.10.1.0/24
 ```
 
 Save results to a custom folder:
@@ -97,7 +97,7 @@ After each scan, two files are saved in the output/ directory:
 ```json
 {
     "scan_info": {
-        "target": "192.168.1.0/24",
+        "target": "30.10.1.0/24",
         "total_hosts_scanned": 254,
         "live_hosts_found": 3,
         "timestamp": "2026-02-21T14:30:00",
