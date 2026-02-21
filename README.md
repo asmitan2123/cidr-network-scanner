@@ -30,7 +30,7 @@ https://drive.google.com/file/d/1JOPWzaTRp0G0d_FlJVTQXlNk9heO5d7V/view?usp=shari
 
 Step 1 - Clone the repository:
 ```
-git clone https://github.com/YOUR_USERNAME/cidr-network-scanner.git
+git clone https://github.com/asmitan2123/cidr-network-scanner.git
 cd cidr-network-scanner
 ```
 
