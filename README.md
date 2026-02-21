@@ -20,7 +20,7 @@ A Python tool that scans a network subnet (CIDR range), finds live hosts, scans 
 
 ## Demo Video
 
-[Click here to watch the scanner in action](YOUR_VIDEO_LINK_HERE)
+https://drive.google.com/file/d/1JOPWzaTRp0G0d_FlJVTQXlNk9heO5d7V/view?usp=sharing
 
 ---
 
