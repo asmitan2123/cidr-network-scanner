@@ -14,9 +14,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# ─────────────────────────────────────────────
-# Common ports to scan (name → port number)
-# ─────────────────────────────────────────────
+# Common ports to scan
 COMMON_PORTS = {
     21: "FTP",
     22: "SSH",
@@ -38,60 +36,40 @@ COMMON_PORTS = {
 }
 
 
-# ─────────────────────────────────────────────
-# Step 1: Check if host is alive
-# ─────────────────────────────────────────────
 def is_host_alive(ip: str) -> bool:
     """
     Checks if a host is alive by trying to connect to common ports.
-    This method works on Windows even when ICMP ping is blocked by firewall.
-    Tries ports 80, 443, 445, 22, 3389 - if any one responds, host is alive.
+    Works on Windows even when ICMP ping is blocked by firewall.
     """
-    # Quick check ports - if ANY of these respond, the host is alive
     quick_ports = [80, 443, 445, 22, 3389, 8080, 21, 23, 53]
-    for port in quick_ports:
-        try:
-            with socket.create_connection((ip, port), timeout=0.5):
-                return True
-        except (socket.timeout, ConnectionRefusedError, OSError):
-            # ConnectionRefusedError means host IS alive but port is closed
-            # We need to catch this differently
-            pass
-
-    # Second method: if connection is refused (not timed out), host is alive
     for port in quick_ports:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)
             result = sock.connect_ex((ip, port))
             sock.close()
-            # result == 0 means open, result == 111 or 10061 means refused (but alive!)
             if result == 0 or result in (111, 10061):
                 return True
         except Exception:
             pass
 
-    # Third method: try ping as fallback
     try:
         if sys.platform == "win32":
-            cmd = ["ping", "-n", "1", "-w", "1000", str(ip)]
+            cmd = ["ping", "-n", "1", "-w", "500", str(ip)]
         else:
             cmd = ["ping", "-c", "1", "-W", "1", str(ip)]
         result = subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=3,
+            timeout=2,
         )
         return result.returncode == 0
     except Exception:
         return False
 
 
-# ─────────────────────────────────────────────
-# Step 2: Scan a single port on a host
-# ─────────────────────────────────────────────
-def scan_port(ip: str, port: int, timeout: float = 1.0) -> bool:
+def scan_port(ip: str, port: int, timeout: float = 0.3) -> bool:
     """
     Tries to connect to a TCP port.
     Returns True if the port is open, False otherwise.
@@ -103,31 +81,34 @@ def scan_port(ip: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-# ─────────────────────────────────────────────
-# Step 3: Scan all common ports for one IP
-# ─────────────────────────────────────────────
 def scan_host_ports(ip: str, ports: dict) -> list:
     """
-    Scans all given ports for an IP address.
-    Returns list of dicts with open port info.
+    Scans all ports for one IP in parallel - much faster!
     """
     open_ports = []
-    for port, service in ports.items():
+
+    def check(port_service):
+        port, service = port_service
         if scan_port(ip, port):
-            open_ports.append({"port": port, "service": service, "state": "open"})
+            return {"port": port, "service": service, "state": "open"}
+        return None
+
+    with ThreadPoolExecutor(max_workers=17) as executor:
+        results = executor.map(check, ports.items())
+
+    for r in results:
+        if r:
+            open_ports.append(r)
+
     return open_ports
 
 
-# ─────────────────────────────────────────────
-# Step 4: Scan entire subnet
-# ─────────────────────────────────────────────
-def scan_subnet(cidr: str, max_workers: int = 50) -> dict:
+def scan_subnet(cidr: str, max_workers: int = 100) -> dict:
     """
     Main scanning function.
     1. Parses the CIDR range
-    2. Pings each IP in parallel
-    3. Port-scans all live hosts
-    Returns a structured results dictionary.
+    2. Checks each IP in parallel
+    3. Port-scans all live hosts in parallel
     """
     try:
         network = ipaddress.ip_network(cidr, strict=False)
@@ -142,39 +123,34 @@ def scan_subnet(cidr: str, max_workers: int = 50) -> dict:
 
     live_ips = []
 
-    # ── Ping sweep in parallel ──
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(is_host_alive, str(ip)): str(ip) for ip in all_ips}
         for i, future in enumerate(as_completed(futures), 1):
             ip = futures[future]
             alive = future.result()
-            print(f"  [{i}/{total}] {ip} → {'ALIVE ✓' if alive else 'dead'}", end="\r")
+            print(f"  [{i}/{total}] Checking {ip} ...", end="\r")
             if alive:
                 live_ips.append(ip)
 
     print(f"\n\n[+] Found {len(live_ips)} live host(s). Starting port scan...\n")
 
-    # ── Port scan each live host ──
     results = []
-    for ip in live_ips:
-        print(f"  [*] Port scanning {ip} ...")
-        open_ports = scan_host_ports(ip, COMMON_PORTS)
-
-        # Try to resolve hostname
-        try:
-            hostname = socket.gethostbyaddr(ip)[0]
-        except socket.herror:
-            hostname = "N/A"
-
-        results.append(
-            {
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        def scan_one(ip):
+            print(f"  [*] Port scanning {ip} ...")
+            open_ports = scan_host_ports(ip, COMMON_PORTS)
+            try:
+                hostname = socket.gethostbyaddr(ip)[0]
+            except socket.herror:
+                hostname = "N/A"
+            return {
                 "ip": ip,
                 "hostname": hostname,
                 "status": "alive",
                 "open_ports": open_ports,
                 "total_open": len(open_ports),
             }
-        )
+        results = list(executor.map(scan_one, live_ips))
 
     scan_data = {
         "scan_info": {
@@ -190,18 +166,12 @@ def scan_subnet(cidr: str, max_workers: int = 50) -> dict:
     return scan_data
 
 
-# ─────────────────────────────────────────────
-# Step 5: Save JSON output
-# ─────────────────────────────────────────────
 def save_json(data: dict, output_path: str):
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     print(f"\n[+] JSON report saved: {output_path}")
 
 
-# ─────────────────────────────────────────────
-# Step 6: Generate Markdown report
-# ─────────────────────────────────────────────
 def save_markdown(data: dict, output_path: str):
     info = data["scan_info"]
     results = data["results"]
@@ -241,7 +211,7 @@ def save_markdown(data: dict, output_path: str):
                 for p in host["open_ports"]:
                     lines.append(f"| {p['port']} | {p['service']} | OPEN |")
             else:
-                lines.append("_No open ports detected from the common port list._")
+                lines.append("_No open ports detected._")
 
             lines.append("")
             lines.append("---")
@@ -253,18 +223,15 @@ def save_markdown(data: dict, output_path: str):
     print(f"[+] Markdown report saved: {output_path}")
 
 
-# ─────────────────────────────────────────────
-# Entry Point
-# ─────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="CIDR Subnet Scanner — Find live hosts and open ports",
+        description="CIDR Subnet Scanner - Find live hosts and open ports",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
 Examples:
   python scanner.py 192.168.1.0/24
   python scanner.py 10.0.0.0/28 --output-dir results/
-  python scanner.py 172.16.0.0/24 --workers 100
+  python scanner.py 30.10.1.0/24 --workers 100
         """,
     )
     parser.add_argument("cidr", help="Target subnet in CIDR notation (e.g. 192.168.1.0/24)")
@@ -276,22 +243,19 @@ Examples:
     parser.add_argument(
         "--workers",
         type=int,
-        default=50,
-        help="Number of parallel threads for ping sweep (default: 50)",
+        default=100,
+        help="Number of parallel threads (default: 100)",
     )
 
     args = parser.parse_args()
 
-    # Create output directory
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     json_path = f"{args.output_dir}/scan_{timestamp}.json"
     md_path = f"{args.output_dir}/scan_{timestamp}.md"
 
-    # Run scan
     scan_data = scan_subnet(args.cidr, max_workers=args.workers)
 
-    # Save outputs
     save_json(scan_data, json_path)
     save_markdown(scan_data, md_path)
 
